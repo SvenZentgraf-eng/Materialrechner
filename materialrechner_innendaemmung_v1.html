@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>Materialrechner Innendämmung</title>
+<style>
+:root{--bg:#f3f4f6;--card:#fff;--text:#171717;--muted:#6b7280;--line:#e5e7eb;--accent:#111827;--soft:#f9fafb;--danger:#b91c1c}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
+.app{max-width:850px;margin:auto;padding:18px 14px 50px}
+header{margin:8px 2px 20px}
+h1{font-size:28px;margin:0 0 6px}.sub{color:var(--muted);font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 2px 10px rgba(0,0,0,.03)}
+.row{display:grid;grid-template-columns:1.5fr 1fr 1fr auto;gap:10px;align-items:end;margin:10px 0}
+label{font-size:13px;font-weight:650;display:block;margin-bottom:6px}
+select,input{width:100%;border:1px solid #d1d5db;border-radius:10px;padding:11px 10px;background:#fff;font-size:16px;color:#111}
+button{border:0;border-radius:11px;padding:11px 14px;font-size:15px;font-weight:700;cursor:pointer}
+.primary{background:var(--accent);color:#fff}.secondary{background:#eef0f3;color:#111}.outline{background:#fff;border:1px solid #d1d5db}.remove{background:#fff;color:var(--danger);border:1px solid #fecaca;padding:10px 12px}
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+.variant-title{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.variant-title h2{font-size:19px;margin:0}
+.options{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}
+.check{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--soft);display:flex;gap:9px;align-items:center;font-size:14px;font-weight:650}
+.check input{width:18px;height:18px}
+.radioBox{display:flex;gap:12px;margin-top:9px}.radioBox label{font-weight:500;display:flex;align-items:center;gap:5px}.radioBox input{width:auto}
+.results{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+.result-row{display:grid;grid-template-columns:1fr 115px;gap:12px;align-items:center;padding:7px 0}
+.result-name{font-size:14px}.result-row input{padding:8px 9px;text-align:right}
+small{color:var(--muted)}
+.output{white-space:pre-wrap;background:#111827;color:#fff;border-radius:14px;padding:16px;line-height:1.55;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;min-height:100px}
+.copybar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.copybar h2{margin:0;font-size:19px}
+.toast{font-size:13px;color:#047857;min-height:18px;margin-top:7px}
+.note{font-size:12px;color:var(--muted);margin-top:12px}
+@media(max-width:650px){.row{grid-template-columns:1fr 1fr}.row .plate{grid-column:1/-1}.options{grid-template-columns:1fr}.result-row{grid-template-columns:1fr 100px}h1{font-size:24px}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+<h1>Materialrechner Innendämmung</h1>
+<div class="sub">Platten eingeben – Zusatzmaterial automatisch berechnen – Materialliste kopieren.</div>
+</header>
+
+<div id="variants"></div>
+
+<div class="actions">
+<button class="primary" onclick="addVariant()">＋ Alternative hinzufügen</button>
+</div>
+
+<div class="card">
+<div class="copybar">
+<h2>Text für den Innendienst</h2>
+<button class="primary" onclick="copyOutput()">📋 Kopieren</button>
+</div>
+<div id="output" class="output"></div>
+<div id="toast" class="toast"></div>
+</div>
+
+<div class="note">
+Aktuell hinterlegt: PURA light 8,5 kg/m², 20 kg/Sack · Kompriband 25 mm: Fläche + 2 m, 10 m/Rolle · Dübel Wand 2 St./m², Decke 4 St./m². Gewebe ist vorläufig mit 50 m²/Rolle hinterlegt. Alle errechneten Bestellmengen können manuell überschrieben werden.
+</div>
+</div>
+
+<script>
+const PRODUCTS = ["PURA Core","Redboard Pro","Solid","Paramur"];
+const THICKNESSES = ["20 mm","25 mm","30 mm","40 mm","50 mm","60 mm","80 mm","100 mm"];
+let variants = [];
+let nextId = 1;
+
+function newVariant(){
+ return {id:nextId++, plates:[{product:"PURA Core",thickness:"50 mm",area:20}],
+ options:{tape:true,dowels:false,finish:false,dowelType:"wall"},
+ overrides:{light:null,mesh:null,tape:null,dowels:null,finish:null}
+ };
+}
+function addVariant(){ variants.push(newVariant()); render(); }
+function addPlate(vid){
+ let v=variants.find(x=>x.id===vid);
+ v.plates.push({product:"PURA Core",thickness:"50 mm",area:0});
+ clearOverrides(v); render();
+}
+function removePlate(vid,idx){
+ let v=variants.find(x=>x.id===vid);
+ if(v.plates.length>1) v.plates.splice(idx,1);
+ clearOverrides(v); render();
+}
+function removeVariant(vid){ variants=variants.filter(v=>v.id!==vid); render(); }
+function clearOverrides(v){v.overrides={light:null,mesh:null,tape:null,dowels:null,finish:null}}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+function totalArea(v){return v.plates.reduce((s,p)=>s+(parseFloat(p.area)||0),0)}
+function calc(v){
+ const a=totalArea(v);
+ return {
+   light:Math.ceil(a*8.5/20),
+   mesh:Math.ceil(a/50),
+   tape:Math.ceil((a+2)/10),
+   dowels:Math.ceil(a*(v.options.dowelType==="ceiling"?4:2)),
+   finish:null
+ };
+}
+function shown(v,key,val){return v.overrides[key]!==null?v.overrides[key]:val}
+function setPlate(vid,idx,key,val){
+ let v=variants.find(x=>x.id===vid);
+ v.plates[idx][key]=key==="area"?(parseFloat(val)||0):val;
+ clearOverrides(v); render();
+}
+function setOpt(vid,key,val){
+ let v=variants.find(x=>x.id===vid); v.options[key]=val; 
+ if(key==="dowelType") v.overrides.dowels=null;
+ render();
+}
+function setOverride(vid,key,val){
+ let v=variants.find(x=>x.id===vid);
+ v.overrides[key]=val===""?null:Math.max(0,parseInt(val)||0);
+ updateOutput();
+}
+function plateRow(v,p,i){
+ return `<div class="row">
+  <div class="plate"><label>Platte</label><select onchange="setPlate(${v.id},${i},'product',this.value)">${PRODUCTS.map(x=>`<option ${p.product===x?"selected":""}>${x}</option>`).join("")}</select></div>
+  <div><label>Dicke</label><select onchange="setPlate(${v.id},${i},'thickness',this.value)">${THICKNESSES.map(x=>`<option ${p.thickness===x?"selected":""}>${x}</option>`).join("")}</select></div>
+  <div><label>Fläche m²</label><input type="number" min="0" step="0.5" value="${p.area}" onchange="setPlate(${v.id},${i},'area',this.value)"></div>
+  <div><button class="remove" onclick="removePlate(${v.id},${i})" ${v.plates.length===1?"disabled":""}>✕</button></div>
+ </div>`;
+}
+function resultRow(name,vid,key,value,unit){
+ return `<div class="result-row"><div class="result-name">${name}<br><small>${unit}</small></div><input type="number" min="0" value="${value}" onchange="setOverride(${vid},'${key}',this.value)"></div>`;
+}
+function variantCard(v,index){
+ const c=calc(v), a=totalArea(v);
+ return `<div class="card">
+ <div class="variant-title"><h2>${index===0?"Variante 1":"Alternative "+index}</h2>${index?`<button class="remove" onclick="removeVariant(${v.id})">Alternative löschen</button>`:""}</div>
+ ${v.plates.map((p,i)=>plateRow(v,p,i)).join("")}
+ <div class="actions"><button class="secondary" onclick="addPlate(${v.id})">＋ Weitere Platte</button></div>
+
+ <div class="options">
+   <label class="check"><input type="checkbox" ${v.options.tape?"checked":""} onchange="setOpt(${v.id},'tape',this.checked)">Kompriband 25 mm</label>
+   <div class="check" style="display:block"><label style="display:flex;gap:9px;align-items:center;margin:0"><input type="checkbox" ${v.options.dowels?"checked":""} onchange="setOpt(${v.id},'dowels',this.checked)">Dübel</label>
+    ${v.options.dowels?`<div class="radioBox"><label><input type="radio" name="d${v.id}" ${v.options.dowelType==="wall"?"checked":""} onchange="setOpt(${v.id},'dowelType','wall')">Wand</label><label><input type="radio" name="d${v.id}" ${v.options.dowelType==="ceiling"?"checked":""} onchange="setOpt(${v.id},'dowelType','ceiling')">Decke</label></div>`:""}
+   </div>
+   <label class="check"><input type="checkbox" ${v.options.finish?"checked":""} onchange="setOpt(${v.id},'finish',this.checked)">Spachtelmasse 2 mm</label>
+ </div>
+
+ <div class="results">
+ <small>Gesamtfläche dieser Variante: ${fmt(a)} m² · Mengen rechts können überschrieben werden.</small>
+ ${resultRow("PURA light",v.id,"light",shown(v,"light",c.light),"Sack à 20 kg")}
+ ${resultRow("Putzgewebe 110",v.id,"mesh",shown(v,"mesh",c.mesh),"Rolle")}
+ ${v.options.tape?resultRow("Kompriband 25 mm",v.id,"tape",shown(v,"tape",c.tape),"Rolle à 10 m"):""}
+ ${v.options.dowels?resultRow("Dübel – "+(v.options.dowelType==="wall"?"Wand":"Decke"),v.id,"dowels",shown(v,"dowels",c.dowels),"Stück"):""}
+ ${v.options.finish?`<div class="result-row"><div class="result-name">Spachtelmasse 2 mm<br><small>Verbrauch/Gebinde noch nicht hinterlegt</small></div><input type="number" min="0" placeholder="manuell" value="${v.overrides.finish??""}" onchange="setOverride(${v.id},'finish',this.value)"></div>`:""}
+ </div></div>`;
+}
+function fmt(n){return Number.isInteger(n)?n:n.toLocaleString("de-DE",{maximumFractionDigits:2})}
+function render(){
+ document.getElementById("variants").innerHTML=variants.map(variantCard).join("");
+ updateOutput();
+}
+function outputFor(v,index){
+ const c=calc(v), lines=[];
+ lines.push(index===0?"Variante 1:":"Alternative "+index+":");
+ v.plates.forEach(p=>lines.push(`${fmt(parseFloat(p.area)||0)} m² ${p.product} ${p.thickness}`));
+ lines.push(`${shown(v,"light",c.light)} Sack PURA light`);
+ lines.push(`${shown(v,"mesh",c.mesh)} Rolle${shown(v,"mesh",c.mesh)===1?"":"n"} Putzgewebe 110`);
+ if(v.options.tape) lines.push(`${shown(v,"tape",c.tape)} Rolle${shown(v,"tape",c.tape)===1?"":"n"} Kompriband 25 mm`);
+ if(v.options.dowels) lines.push(`${shown(v,"dowels",c.dowels)} Stück Dübel (${v.options.dowelType==="wall"?"Wand":"Decke"})`);
+ if(v.options.finish && v.overrides.finish!==null) lines.push(`${v.overrides.finish} Sack Spachtelmasse (2 mm)`);
+ return lines.join("\n");
+}
+function updateOutput(){
+ document.getElementById("output").textContent=variants.map((v,i)=>outputFor(v,i)).join("\n\n");
+}
+async function copyOutput(){
+ const t=document.getElementById("output").textContent;
+ try{await navigator.clipboard.writeText(t); document.getElementById("toast").textContent="Materialliste wurde kopiert."}
+ catch(e){
+   const ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();
+   document.getElementById("toast").textContent="Materialliste wurde kopiert.";
+ }
+ setTimeout(()=>document.getElementById("toast").textContent="",2200);
+}
+variants.push(newVariant());
+render();
+</script>
+</body>
+</html>
